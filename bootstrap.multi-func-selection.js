@@ -8,10 +8,16 @@ var mfsRequestPrompts = function (event) {
     var prompts = wrap.find('.mfs-prompts');
 
     var url = prompts.attr('data-prompts-url');
+    var page = 1;
+    if (prompts.attr('data-page') === undefined) prompts.attr('data-page', 1);
+    else page = prompts.attr('data-page');
+
+    var size = prompts.attr('data-size') ? prompts.attr('data-size') : 10;
+
     var data = {
         search: wrap.find('.mfs-input').val(), // 搜索名称
-        page: prompts.attr('data-page'),
-        size: prompts.attr('data-size'),
+        page: page,
+        size: size,
     };
 
     $.ajax({
@@ -46,15 +52,19 @@ var mfsDisplayPrompts = function (msg) {
     var wrap = this;
     var prompts = wrap.find('.mfs-prompts');
 
+    var dik = prompts.attr('data-id-key') ? prompts.attr('data-id-key') : 'id';
+    var dnk = prompts.attr('data-name-key') ? prompts.attr('data-name-key') : 'name';
+
     /* 处理下拉列表内容 */
     var content = '';
     for (var i in msg.records) {
-        var key = msg.records[i]['id'];
+        var key = msg.records[i][dik];
+        var value = msg.records[i][dnk];
 
         if (wrap.attr('data-multi-selected') && wrap.find('.mfs-multi-selected-display-item[data-key=' + key + ']').length) {
-            content += '<li><a class="mfs-multi-selected-item-add mfs-selected" href="' + key + '">' + msg.records[i]['name'] + '</a></li>';
+            content += '<li><a class="mfs-selected-item mfs-selected" href="' + key + '">' + value + '</a></li>';
         } else {
-            content += '<li><a class="mfs-multi-selected-item-add" href="' + key + '">' + msg.records[i]['name'] + '</a></li>';
+            content += '<li><a class="mfs-selected-item" href="' + key + '">' + value + '</a></li>';
         }
     }
     prompts.find('.mfs-prompts-content').html(content);
@@ -84,22 +94,59 @@ var mfsDisplayPrompts = function (msg) {
 }
 
 /**
- * 添加已经选中的多选展示
- * @return {[type]} [description]
+ * 单选触发
+ * @param  {[type]} event [description]
+ * @return {[type]}       [description]
  */
-var mfsAddMultiSelected = function (event) {
+var mfsSelected = function (event) {
     event.preventDefault();
 
     // 相关容器获取
     var selectedA = $(event.currentTarget);
     var wrap = selectedA.parents('.mfs');
-    var displayBox = wrap.find('.mfs-multi-selected-display-box');
-    if (displayBox.length == 0) displayBox = $('<ul class="mfs-multi-selected-display-box"></ul>').appendTo(wrap);
     
     // 选中元素的键值
     var sKey = selectedA.attr('href');
     var sValue = selectedA.text();
 
+    var iName = wrap.attr('data-name');
+    var inputBox = wrap.find('.mfs-input-box');
+
+    // 填写选择选项的名称到input展示
+    inputBox.find('.mfs-input').val(sValue);
+    // 建立hidden input传输选择选项的值
+    var hiddenInput = inputBox.find('.mfs-hidden-input');
+    if (hiddenInput.length) hiddenInput.attr({'value': sKey, 'name': iName});
+    else inputBox.append('<input class="mfs-hidden-input" type="hidden" name="' + iName + '" value="' + sKey + '"/>');
+}
+
+/**
+ * 取消单选触发
+ * @param  {[type]} event [description]
+ * @return {[type]}       [description]
+ */
+var mfsUnselected = function (event) {
+    $(event.currentTarget).parents('.mfs').find('.mfs-hidden-input').attr('value', '');
+}
+
+/**
+ * 添加已经选中的多选展示
+ * @return {[type]} [description]
+ */
+var mfsAddMultiSelected = function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // 相关容器获取
+    var selectedA = $(event.currentTarget);
+    var wrap = selectedA.parents('.mfs');
+    
+    // 选中元素的键值
+    var sKey = selectedA.attr('href');
+    var sValue = selectedA.text();
+
+    var displayBox = wrap.find('.mfs-multi-selected-display-box');
+    if (displayBox.length == 0) displayBox = $('<ul class="mfs-multi-selected-display-box"></ul>').appendTo(wrap);
     var iName = wrap.attr('data-name') + '[]';
 
     displayBox.append('<li class="mfs-multi-selected-display-item" data-key="' + sKey + '">\
@@ -107,12 +154,7 @@ var mfsAddMultiSelected = function (event) {
         <a href="#" class="mfs-multi-selected-item-del">×</a>\
         <input name="' + iName + '" type="hidden" value="' + sKey + '">\
     </li>');
-
-    // 多选处理
-    if (wrap.attr('data-multi-selected')) {
-        event.stopPropagation();
-        selectedA.addClass('mfs-selected');
-    }
+    selectedA.addClass('mfs-selected');
 }
 
 /**
@@ -125,7 +167,7 @@ var mfsDelMultiSelected = function (event) {
 
     var delA = $(event.currentTarget);
 
-    if (delA.hasClass('mfs-selected')) { // 多选再次点击取消处理
+    if (delA.hasClass('mfs-selected')) { // 再次点击取消处理
         event.stopPropagation();
         delA.parents('.mfs').find('.mfs-multi-selected-display-item[data-key=' + delA.attr('href') + ']').remove();
         delA.removeClass('mfs-selected');
@@ -140,7 +182,7 @@ jQuery(document).ready(function($) {
     $('.mfs-input-box').on('click', '.mfs-input-arrow', mfsRequestPrompts);
 
     /* 文本框获得焦点或内容改变事件 */
-    $('.mfs-input-box').on('keypress', '.mfs-input', mfsRequestPrompts);
+    $('.mfs-input-box').on('keydown', '.mfs-input', mfsRequestPrompts);
     $('.mfs-input-box').on('focus', '.mfs-input', function(e) {
         if ($(e.currentTarget).val()) mfsRequestPrompts(e);
     });
@@ -153,10 +195,26 @@ jQuery(document).ready(function($) {
         event.stopPropagation();
     });
 
+    // 分页点击 - 事件绑定
+    $('.mfs-prompts-pagination').on('click', 'a', function(event) {
+        event.preventDefault();
+        /* Act on the event */
+        var pA = $(event.currentTarget);
+        var page = pA.attr('href');
+        pA.parents('.mfs-prompts').attr('data-page', page);
+
+        mfsRequestPrompts(event);
+    });
+
     // 多选增加 - 事件绑定
-    $('.mfs-prompts-content').on('click', '.mfs-multi-selected-item-add:not(.mfs-selected)', mfsAddMultiSelected);
+    $('.mfs[data-multi-selected] .mfs-prompts-content').on('click', '.mfs-selected-item:not(.mfs-selected)', mfsAddMultiSelected);
 
     // 多选删除 - 事件绑定
-    $('.mfs-prompts-content').on('click', '.mfs-selected', mfsDelMultiSelected);
-    $('.mfs').on('click', '.mfs-multi-selected-item-del', mfsDelMultiSelected);
+    $('.mfs[data-multi-selected] .mfs-prompts-content').on('click', '.mfs-selected', mfsDelMultiSelected);
+    $('.mfs[data-multi-selected]').on('click', '.mfs-multi-selected-item-del', mfsDelMultiSelected);
+
+    // 单选选定 - 事件绑定
+    $('.mfs:not([data-multi-selected]) .mfs-prompts-content').on('click', '.mfs-selected-item', mfsSelected);
+    // 单选取消 - 事件绑定
+    $('.mfs:not([data-multi-selected])').on('keydown', '.mfs-input', mfsUnselected);
 });
